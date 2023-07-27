@@ -1,0 +1,103 @@
+GITLAB_PROJECT = "https://github.com/namrataaws/simple-nodejs-app.git"
+GITLAB_CREDENTIALS_ID = 'harshal-cred' 
+APPLICATION_NAME = "NV"
+def pipelineName
+node('slave-node') {
+    }
+   stage('set agent'){
+            SLAVE_AGENT_NODE = "slave-node"
+            MASTER_AGENT_NODE = "master"
+    }
+    stage("Get Pipeline Name") {
+         pipelineName = env.JOB_NAME
+        echo "Pipeline Name: ${pipelineName}"
+    }
+    
+node{
+   stage ("Listing Branches") {
+        echo GITLAB_PROJECT
+        //git url: GITLAB_PROJECT, credentialsId: GITLAB_CREDENTIALS_ID
+        withCredentials([gitUsernamePassword(credentialsId: 'harshal-cred', gitToolName: 'Default')]) {
+        agent { label "${SLAVE_AGENT_NODE}" }
+        dir("/home/nginx/workspace/${pipelineName}"){
+            sh 'git fetch'
+            }
+        }
+        sh 'git branch -r | awk \'{print $1}\' ORS=\'\\n\' > nv_olp_fe_branches.txt'
+        sh "cut -b 8-100 nv_olp_fe_branches.txt > nv_olp_fe_branch.txt"
+   }
+    stage('Branch Selection') {
+        liste = readFile 'nv_olp_fe_branch.txt'
+        echo "please click on the link here to chose the branch to build"
+        env.BRANCH_SCOPE = input message: 'Please choose the branch to build ', ok: 'Deploy',
+        parameters: [choice(name: 'BRANCH_NAME', choices: "${liste}", description: 'Branch to build?')]
+    }
+} 
+pipeline {
+    agent none
+    environment {
+        BRANCH = "${env.BRANCH_SCOPE}"
+    }
+    stages {
+        stage('Environment file changes') {
+            agent { label "${SLAVE_AGENT_NODE}" }
+            steps {
+                dir("/home/ubuntu/webapp"){
+                echo '************************* Env Change Stage Started *************************'
+                echo 'No Env Changes'
+                echo '************************* Env Change Stage Finished *************************'
+        }
+ }
+}
+        stage('Check Running Branch & Current Commit') {
+             agent { label "${SLAVE_AGENT_NODE}" }
+            steps {
+                dir("/home/ubuntu/webapp"){
+                echo '************************* Check Running Branch & Current Commit Stage Started *************************'
+                sh 'git branch'
+                sh 'git log | sed -n "1,3p"'
+                echo '************************* Check Running Branch & Current Commit Stage Finished *************************'
+            }
+ }
+}
+        stage('Branch Checkout') {
+             agent { label "${SLAVE_AGENT_NODE}" }
+            steps {
+                withCredentials([gitUsernamePassword(credentialsId: 'harshal-cred', gitToolName: 'Default')]) {
+                dir(""){
+                echo '************************* Branch Checkout Stage Started *************************'
+                sh 'git reset --hard'
+                sh 'git fetch'
+                sh "git checkout ${env.BRANCH}"
+                echo '************************* Branch Checkout Stage Finished *************************'
+            }
+    }
+ }
+}
+        // stage('Check URL Response') {
+        //     agent { label "${MASTER_AGENT_NODE}" }
+        //     steps {
+        //         echo '************************* Check URL Response Stage Started *************************'
+        //         sh 'curl -Is https://pf.prismtechnology.xyz/outlook | head -1'
+        //         echo '************************* Check URL Response Stage Finished *************************'
+        //     }
+        // }
+
+
+        stage('Deployment') {
+            agent { label "${SLAVE_AGENT_NODE}" }
+            steps {
+                withCredentials([gitUsernamePassword(credentialsId: 'harshal-cred', gitToolName: 'Default')]) {
+                dir("/home/ubuntu/webapp"){
+                echo '************************* Deployment Stage Started *************************'
+                sh 'git reset --hard'
+                sh "git pull origin ${env.BRANCH}"
+                sh 'git log | sed -n "1,3p"'
+                echo '************************* Branch Checkout Stage Finished *************************'
+            }
+    }
+}
+}
+
+    }
+}
